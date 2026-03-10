@@ -62,8 +62,14 @@ class BlockchainClient:
         )
 
     async def _get(self, path: str) -> Any:
-        """GET with exponential-backoff retries. Returns parsed JSON or plain text."""
+        """GET with exponential-backoff retries. Returns parsed JSON or plain text.
+
+        Regular errors use retry_backoff_seconds (0.5 → 1 → 2 …).
+        HTTP 429 rate-limit responses use rate_limit_backoff_seconds (5 → 10 → 20 …)
+        so we don't hammer the API while waiting for the limit to clear.
+        """
         delay = settings.retry_backoff_seconds
+        rate_delay = settings.rate_limit_backoff_seconds
         last_error: Exception | None = None
 
         for attempt in range(1, settings.max_retries + 1):
@@ -102,8 +108,13 @@ class BlockchainClient:
                     raise
                 if attempt == settings.max_retries:
                     break
-                await asyncio.sleep(delay)
-                delay *= 2
+                if isinstance(exc, RateLimitedError):
+                    # Rate-limited: back off much longer before retrying
+                    await asyncio.sleep(rate_delay)
+                    rate_delay *= 2
+                else:
+                    await asyncio.sleep(delay)
+                    delay *= 2
 
         raise BlockchainClientError(
             f"Request failed after {settings.max_retries} attempts "
@@ -130,6 +141,7 @@ class BlockchainClient:
             async with semaphore:
                 path = f"/api/block/{block_hash}/txs/{start}" if start > 0 else f"/api/block/{block_hash}/txs"
                 data = await self._get_json(path)
+                await asyncio.sleep(0.15)  # gentle pacing between pages
                 return data if isinstance(data, list) else []
 
         results = await asyncio.gather(*(fetch_page(s) for s in pages))
@@ -226,7 +238,7 @@ class BlockchainClient:
                 break
             start_height = last_height - 1
 
-            await asyncio.sleep(0.05)  # gentle pacing
+            await asyncio.sleep(0.4)  # gentle pacing between block chunks
 
         return day_blocks
 

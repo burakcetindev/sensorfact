@@ -7,10 +7,11 @@ class Settings(BaseSettings):
     request_timeout_seconds: float = 10.0
     max_retries: int = 4
     retry_backoff_seconds: float = 0.5
+    rate_limit_backoff_seconds: float = 5.0
     block_cache_ttl_seconds: int = 900
     tx_cache_ttl_seconds: int = 900
     daily_cache_ttl_seconds: int = 300
-    max_parallel_requests: int = 8
+    max_parallel_requests: int = 2
 
     model_config = SettingsConfigDict(
         env_file=".env",

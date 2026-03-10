@@ -121,10 +121,10 @@ screen_block() {
   echo ""
 
   Q="query { energyPerTransactionForBlock(blockIdentifier: \\\"$BLOCK_ID\\\") { blockHash blockHeight transactionCount totalEnergyKwh energyPerTransactionKwh transactions { hash sizeBytes energyKwh } } }"
-  R=$(gql "$Q" 90)
-  show_result "$R"
+  RESP=$(gql "$Q" 120)
+  show_result "$RESP"
 
-  echo "$R" | python3 -c "
+  echo "$RESP" | python3 -c "
 import sys, json
 d = json.load(sys.stdin)
 if 'errors' in d: exit(0)
@@ -159,10 +159,10 @@ screen_daily() {
   echo ""
 
   Q="query { totalEnergyConsumptionLastDays(days: $DAYS) { date blockCount transactionCount totalEnergyKwh } }"
-  R=$(gql "$Q" 600)
-  show_result "$R"
+  RESP=$(gql "$Q" 600)
+  show_result "$RESP"
 
-  echo "$R" | python3 -c "
+  echo "$RESP" | python3 -c "
 import sys, json
 d = json.load(sys.stdin)
 if 'errors' in d: exit(0)
@@ -199,10 +199,10 @@ screen_wallet() {
   echo ""
 
   Q="query { totalEnergyByWalletAddress(address: \\\"$ADDR\\\") { address transactionCount totalEnergyKwh } }"
-  R=$(gql "$Q" 60)
-  show_result "$R"
+  RESP=$(gql "$Q" 60)
+  show_result "$RESP"
 
-  echo "$R" | python3 -c "
+  echo "$RESP" | python3 -c "
 import sys, json
 d = json.load(sys.stdin)
 if 'errors' in d: exit(0)
@@ -223,29 +223,29 @@ screen_validation() {
   h2 "  Sending days = 0  (must be a positive number)"
   sep
   echo ""
-  R=$(gql "query { totalEnergyConsumptionLastDays(days: 0) { date } }" 10)
-  show_result "$R"
+  RESP=$(gql "query { totalEnergyConsumptionLastDays(days: 0) { date } }" 10)
+  show_result "$RESP"
 
   sep
   h2 "  Sending days = 999  (exceeds the maximum of 60)"
   sep
   echo ""
-  R=$(gql "query { totalEnergyConsumptionLastDays(days: 999) { date } }" 10)
-  show_result "$R"
+  RESP=$(gql "query { totalEnergyConsumptionLastDays(days: 999) { date } }" 10)
+  show_result "$RESP"
 
   sep
   h2 "  Sending an empty block identifier"
   sep
   echo ""
-  R=$(gql "query { energyPerTransactionForBlock(blockIdentifier: \\\"\\\") { blockHash } }" 10)
-  show_result "$R"
+  RESP=$(gql "query { energyPerTransactionForBlock(blockIdentifier: \\\"\\\") { blockHash } }" 10)
+  show_result "$RESP"
 
   sep
   h2 "  Sending an empty wallet address"
   sep
   echo ""
-  R=$(gql "query { totalEnergyByWalletAddress(address: \\\"\\\") { address } }" 10)
-  show_result "$R"
+  RESP=$(gql "query { totalEnergyByWalletAddress(address: \\\"\\\") { address } }" 10)
+  show_result "$RESP"
 }
 
 screen_health() {
@@ -256,7 +256,23 @@ screen_health() {
   echo ""
   ok "Server is healthy"
   note "GraphQL playground available at: $GRAPHQL_URL"
-  note "Open it in your browser to explore and run queries interactively"
+}
+
+screen_webui() {
+  h1 "GraphiQL — interactive API explorer"
+  note "GraphiQL is a browser-based IDE for writing and running GraphQL queries."
+  note "You can explore the schema, autocomplete fields, and see live results."
+  echo ""
+  ok "Opening $GRAPHQL_URL in your browser..."
+  echo ""
+  if command -v open &>/dev/null; then
+    open "$GRAPHQL_URL"
+  elif command -v xdg-open &>/dev/null; then
+    xdg-open "$GRAPHQL_URL"
+  else
+    warn "Could not detect a browser opener. Visit manually:"
+    note "$GRAPHQL_URL"
+  fi
 }
 
 print_menu() {
@@ -274,6 +290,7 @@ print_menu() {
   echo -e "   ${CYAN}${BOLD}3${R}  Total energy for a wallet address"
   echo -e "   ${CYAN}${BOLD}4${R}  Input validation examples"
   echo -e "   ${CYAN}${BOLD}5${R}  System health"
+  echo -e "   ${CYAN}${BOLD}6${R}  Open GraphiQL in browser"
   echo ""
   sep
   echo ""
@@ -301,10 +318,11 @@ while true; do
     3) screen_wallet     ;;
     4) screen_validation ;;
     5) screen_health     ;;
+    6) screen_webui      ;;
     q|Q|quit|exit)
       echo -e "\n  ${DIM}Goodbye.${R}\n"; exit 0 ;;
     *)
-      warn "Please enter a number from 1 to 5, or q to quit." ;;
+      warn "Please enter a number from 1 to 6, or q to quit." ;;
   esac
 
   echo ""
