@@ -29,24 +29,17 @@ _GRAPHIQL_HTML = """<!DOCTYPE html>
     root.render(React.createElement(GraphiQL, {
       fetcher,
       defaultEditorToolsVisibility: true,
-      defaultQuery: `# Bitcoin Energy API — GraphiQL Explorer
-# ─────────────────────────────────────────────────────────
-# Run any query below using the ▶ button (or Ctrl+Enter).
-# Use latestBlock first to grab a real block hash or height.
+      defaultQuery: `# ── 1. Block energy breakdown ─────────────────────────────────────────────────
+# Small early blocks (1–2 transactions) return in under 5 seconds.
+# Pick any hash below and press ▶ (or Ctrl+Enter) to run.
+#
+#  Block 1    – 00000000839a8e6886ab5951d76f411475428afc90947ee320161bbf18eb6048
+#  Block 170  – 00000000d1145790a8694403d4063f323d499e655c83426834d4ce2f8dd4a2ee
+#  Block 1000 – 00000000c937983704a73af28acdec37b049d214adbda81d7e2a3dd146f6ed09
 
-# 1. Get the current latest block (hash + height)
-query LatestBlock {
-  latestBlock {
-    hash
-    height
-  }
-}
-
-# 2. Energy breakdown for a block
-#    Paste the hash from LatestBlock above, or use a height like "940137"
 query BlockEnergy {
   energyPerTransactionForBlock(
-    blockIdentifier: "940137"
+    blockIdentifier: "00000000839a8e6886ab5951d76f411475428afc90947ee320161bbf18eb6048"
   ) {
     blockHash
     blockHeight
@@ -61,9 +54,11 @@ query BlockEnergy {
   }
 }
 
-# 3. Total energy consumed day-by-day over the last N days
+# ── 2. Daily energy summary ────────────────────────────────────────────────────
+# days: 1 is fast (~10 s).  Increase to 2–3 for more history (30–60 s).
+
 query DailyEnergy {
-  totalEnergyConsumptionLastDays(days: 3) {
+  totalEnergyConsumptionLastDays(days: 1) {
     date
     blockCount
     transactionCount
@@ -71,8 +66,19 @@ query DailyEnergy {
   }
 }
 
-# 4. Total energy for a wallet address
-#    Using Satoshi Nakamoto's genesis wallet as an example
+# ── 3. Latest block ────────────────────────────────────────────────────────────
+# Grab the current tip hash/height to use in BlockEnergy above.
+
+query LatestBlock {
+  latestBlock {
+    hash
+    height
+  }
+}
+
+# ── 4. Wallet energy footprint ────────────────────────────────────────────────
+# Satoshi Nakamoto's genesis wallet (block 0, Jan 3 2009).
+
 query WalletEnergy {
   totalEnergyByWalletAddress(
     address: "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"
@@ -111,7 +117,13 @@ async def graphql_playground():
 
 @app.post("/graphql")
 async def graphql_endpoint(request: Request):
-    """Execute GraphQL queries against the Bitcoin energy API."""
+    """Execute a GraphQL query or mutation.
+
+    Reads the JSON body, injects ``energy_service`` into the Ariadne context,
+    and returns the result with status 200 on success or 400 on a parse error.
+    Validation and resolver errors are returned as structured GraphQL
+    ``errors[]`` within a 200 response body.
+    """
     data = await request.json()
     context = {"energy_service": service}
     success, result = await run_graphql(schema, data, context_value=context)
@@ -120,4 +132,10 @@ async def graphql_endpoint(request: Request):
 
 @app.get("/health")
 async def health() -> dict[str, str]:
+    """Return a simple liveness probe.
+
+    Returns ``{"status": "ok"}`` whenever the process is running.  Used by
+    the demo script and monitoring tools to confirm the server is up before
+    sending GraphQL queries.
+    """
     return {"status": "ok"}

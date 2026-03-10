@@ -43,12 +43,25 @@ class BlockchainClient:
     _TX_PAGE_SIZE = 25
 
     def __init__(self, http_getter: Callable[..., Any] | None = None) -> None:
+        """Initialise the client.
+
+        Args:
+            http_getter: Optional coroutine factory used in tests to bypass the
+                real HTTP stack.  When provided, ``_get`` calls
+                ``await http_getter(path)`` instead of making a live request.
+                Pass ``None`` (the default) for production use.
+        """
         self._http_getter = http_getter
         self._timeout = settings.request_timeout_seconds
 
     # ── low-level HTTP ────────────────────────────────────────────────────────
 
     def _make_client(self) -> httpx.AsyncClient:
+        """Create a configured ``httpx.AsyncClient`` for a single request cycle.
+
+        Sets a browser-like ``User-Agent`` header to avoid being blocked by
+        mempool.space's bot filters, and enables redirect following.
+        """
         return httpx.AsyncClient(
             base_url=_BASE,
             timeout=self._timeout,
@@ -122,6 +135,19 @@ class BlockchainClient:
         )
 
     async def _get_json(self, path: str) -> Any:
+        """GET *path* and always return a parsed Python object.
+
+        Thin wrapper over :meth:`_get` that JSON-parses plain-text responses
+        so callers always receive a ``dict`` or ``list`` rather than a raw
+        string.  Used for endpoints that may sometimes return plain text but
+        are expected to return JSON-parseable content.
+
+        Args:
+            path: URL path relative to ``_BASE``.
+
+        Returns:
+            A JSON-decoded Python object.
+        """
         result = await self._get(path)
         if isinstance(result, str):
             try:
@@ -133,22 +159,33 @@ class BlockchainClient:
     # ── block transaction pagination ──────────────────────────────────────────
 
     async def _get_block_txs(self, block_hash: str, tx_count: int) -> list[dict[str, Any]]:
-        """Fetch all transactions for a block — sequential pages to avoid rate limits."""
+        """Fetch all transactions for a block — concurrent pages with a semaphore.
+
+        Pages are fetched in parallel (up to ``settings.max_parallel_requests``
+        at a time) rather than sequentially, cutting wall-clock time from
+        O(pages × latency) to O(ceil(pages / parallelism) × latency).
+        Results are re-sorted by page offset so transaction order is preserved.
+        """
+        if tx_count == 0:
+            return []
+
+        starts = list(range(0, tx_count, self._TX_PAGE_SIZE))
+        sem = asyncio.Semaphore(settings.max_parallel_requests)
+
+        async def fetch_page(start: int) -> tuple[int, list[dict]]:
+            async with sem:
+                path = (
+                    f"/api/block/{block_hash}/txs/{start}"
+                    if start > 0
+                    else f"/api/block/{block_hash}/txs"
+                )
+                page = await self._get_json(path)
+                return (start, page if isinstance(page, list) else [])
+
+        pairs = await asyncio.gather(*[fetch_page(s) for s in starts])
         txs: list[dict] = []
-        start = 0
-        while start < tx_count:
-            path = (
-                f"/api/block/{block_hash}/txs/{start}"
-                if start > 0
-                else f"/api/block/{block_hash}/txs"
-            )
-            page = await self._get_json(path)
-            if not isinstance(page, list) or not page:
-                break
+        for _, page in sorted(pairs, key=lambda p: p[0]):
             txs.extend(page)
-            start += self._TX_PAGE_SIZE
-            if start < tx_count:
-                await asyncio.sleep(0.25)  # pacing between pages avoids 429s
         return txs
 
     # ── public API ────────────────────────────────────────────────────────────
@@ -250,8 +287,78 @@ class BlockchainClient:
 
         return day_blocks
 
+    async def get_blocks_for_days(
+        self, day_starts: list[datetime]
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Single backwards walk that collects block summaries for *multiple* days.
+
+        Calling ``get_blocks_by_day`` N times each starts from the chain tip and
+        walks all the way back to the target day — O(N × blocks_to_cover) API
+        calls total.  This method does the walk **once**, partitioning blocks
+        into per-day buckets along the way, so the cost is O(blocks_to_cover)
+        regardless of how many days are requested.
+
+        Returns a mapping  ``{date_iso: [block_dict, …]}``  where each
+        block_dict has keys: hash, time, size, tx_count.
+        """
+        if not day_starts:
+            return {}
+
+        normalised = [
+            d.replace(tzinfo=UTC) if d.tzinfo is None else d for d in day_starts
+        ]
+
+        windows: dict[str, tuple[int, int]] = {
+            d.date().isoformat(): (int(d.timestamp()), int(d.timestamp()) + 86_400)
+            for d in normalised
+        }
+        earliest_ts = min(ts_start for ts_start, _ in windows.values())
+        result: dict[str, list[dict]] = {k: [] for k in windows}
+
+        tip_height_text = await self._get("/api/blocks/tip/height")
+        current_height = int(str(tip_height_text).strip())
+        start_height = current_height
+
+        while start_height > 0:
+            chunk = await self._get_json(f"/api/blocks/{start_height}")
+            if not isinstance(chunk, list) or not chunk:
+                break
+
+            for block in chunk:
+                ts = int(block.get("timestamp", 0))
+                for date_key, (ts_start, ts_end) in windows.items():
+                    if ts_start <= ts < ts_end:
+                        result[date_key].append(
+                            {
+                                "hash": str(block.get("id", "")),
+                                "time": ts,
+                                "size": int(block.get("size", 0)),
+                                "tx_count": int(block.get("tx_count", 0)),
+                            }
+                        )
+
+            chunk_min_ts = min(int(b.get("timestamp", 0)) for b in chunk)
+            if chunk_min_ts < earliest_ts:
+                break
+
+            last_height = int(chunk[-1].get("height", start_height - len(chunk)))
+            if last_height >= start_height:
+                break
+            start_height = last_height - 1
+
+            await asyncio.sleep(0.25)  # reduced from 0.4; still gentle on the API
+
+        return result
+
     async def get_transaction(self, tx_hash: str) -> dict[str, Any]:
-        """Returns {"hash": str, "size": int}."""
+        """Fetch a single transaction by hash.
+
+        Args:
+            tx_hash: The transaction identifier (txid).
+
+        Returns:
+            Dict with keys ``hash`` (str) and ``size`` (int).
+        """
         tx = await self._get_json(f"/api/tx/{tx_hash}")
         return {
             "hash": str(tx.get("txid", tx_hash)),
