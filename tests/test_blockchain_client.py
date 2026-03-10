@@ -302,3 +302,127 @@ class TestGetTransaction:
         })
         result = await client.get_transaction(tx_hash)
         assert result == {"hash": tx_hash, "size": 400}
+
+
+# ---------------------------------------------------------------------------
+# _get_json  — string-response branches
+# ---------------------------------------------------------------------------
+
+class TestGetJsonStringBranch:
+    """Cover the _get_json str→JSON and str→plain text code paths."""
+
+    @pytest.mark.asyncio
+    async def test_json_string_is_parsed(self):
+        """When _get returns a JSON string, _get_json must parse and return the object."""
+        raw_json_str = '{"id": "abc", "height": 1, "tx_count": 0}'
+
+        async def getter(path: str):
+            return raw_json_str  # a str, not a dict
+
+        client = BlockchainClient(http_getter=getter)
+        result = await client._get_json("/any")
+        assert result == {"id": "abc", "height": 1, "tx_count": 0}
+
+    @pytest.mark.asyncio
+    async def test_non_json_string_returned_as_is(self):
+        """When _get returns a non-JSON string, _get_json returns it unchanged."""
+        async def getter(path: str):
+            return "not-json-text"
+
+        client = BlockchainClient(http_getter=getter)
+        result = await client._get_json("/any")
+        assert result == "not-json-text"
+
+
+# ---------------------------------------------------------------------------
+# get_block_by_hash — height-not-resolved error branch
+# ---------------------------------------------------------------------------
+
+class TestGetBlockByHashErrors:
+
+    @pytest.mark.asyncio
+    async def test_numeric_height_empty_resolution_raises(self):
+        """If the block-height endpoint returns an empty string, raise ClientError."""
+        client = make_client({"/api/block-height/99999": ""})
+        with pytest.raises(BlockchainClientError, match="No block at height"):
+            await client.get_block_by_hash("99999")
+
+    @pytest.mark.asyncio
+    async def test_numeric_height_non_string_resolution_raises(self):
+        """If the block-height endpoint returns a non-string, raise ClientError."""
+        client = make_client({"/api/block-height/12": None})
+        with pytest.raises(BlockchainClientError, match="No block at height"):
+            await client.get_block_by_hash("12")
+
+
+# ---------------------------------------------------------------------------
+# get_blocks_by_day
+# ---------------------------------------------------------------------------
+
+class TestGetBlocksByDay:
+    """Tests for the single-day backwards-walk helper."""
+
+    @pytest.mark.asyncio
+    async def test_returns_blocks_in_target_day(self):
+        """Blocks within the day window are returned."""
+        today = datetime.now(tz=UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+        day_ts = int(today.timestamp())
+
+        chunk = [
+            {"id": "b1", "height": 5, "timestamp": day_ts + 3600, "size": 100, "tx_count": 5},
+            {"id": "b0", "height": 4, "timestamp": day_ts - 1, "size": 50, "tx_count": 2},
+        ]
+        client = make_client({
+            "/api/blocks/tip/height": "5",
+            "/api/blocks/5": chunk,
+        })
+        result = await client.get_blocks_by_day(today)
+        assert len(result) == 1
+        assert result[0]["hash"] == "b1"
+
+    @pytest.mark.asyncio
+    async def test_skips_blocks_in_future(self):
+        """Blocks with timestamp >= day_end are skipped."""
+        today = datetime.now(tz=UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+        tomorrow_ts = int(today.timestamp()) + 86_400
+
+        chunk = [
+            {"id": "future", "height": 10, "timestamp": tomorrow_ts + 1, "size": 100, "tx_count": 1},
+            {"id": "today",  "height": 9,  "timestamp": int(today.timestamp()) + 100, "size": 50, "tx_count": 1},
+            {"id": "old",    "height": 8,  "timestamp": int(today.timestamp()) - 1,   "size": 50, "tx_count": 1},
+        ]
+        client = make_client({
+            "/api/blocks/tip/height": "10",
+            "/api/blocks/10": chunk,
+        })
+        result = await client.get_blocks_by_day(today)
+        assert len(result) == 1
+        assert result[0]["hash"] == "today"
+
+    @pytest.mark.asyncio
+    async def test_empty_chunk_returns_empty(self):
+        """If the API returns an empty list, result is empty."""
+        today = datetime.now(tz=UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+        client = make_client({
+            "/api/blocks/tip/height": "5",
+            "/api/blocks/5": [],
+        })
+        result = await client.get_blocks_by_day(today)
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_naive_datetime_treated_as_utc(self):
+        """A naive datetime is treated as UTC without raising."""
+        today_naive = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        today_ts = int(today_naive.replace(tzinfo=UTC).timestamp())
+
+        chunk = [
+            {"id": "b", "height": 3, "timestamp": today_ts + 1, "size": 100, "tx_count": 1},
+            {"id": "old", "height": 2, "timestamp": today_ts - 1, "size": 50, "tx_count": 1},
+        ]
+        client = make_client({
+            "/api/blocks/tip/height": "3",
+            "/api/blocks/3": chunk,
+        })
+        result = await client.get_blocks_by_day(today_naive)
+        assert isinstance(result, list)

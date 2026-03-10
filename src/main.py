@@ -122,9 +122,16 @@ async def graphql_endpoint(request: Request):
     Reads the JSON body, injects ``energy_service`` into the Ariadne context,
     and returns the result with status 200 on success or 400 on a parse error.
     Validation and resolver errors are returned as structured GraphQL
-    ``errors[]`` within a 200 response body.
+    ``errors[]`` within a 200 response body.  A malformed (non-JSON) request
+    body returns a 400 with a descriptive error rather than a 500.
     """
-    data = await request.json()
+    try:
+        data = await request.json()
+    except Exception:
+        return JSONResponse(
+            {"errors": [{"message": "Request body is not valid JSON."}]},
+            status_code=400,
+        )
     context = {"energy_service": service}
     success, result = await run_graphql(schema, data, context_value=context)
     return JSONResponse(result, status_code=200 if success else 400)

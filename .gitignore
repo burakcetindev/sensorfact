@@ -1,9 +1,40 @@
+# ── Python ────────────────────────────────────────────────────────────────────
 .venv/
 __pycache__/
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
 *.pyc
 *.pyo
 *.pyd
+*.egg-info/
+dist/
+build/
+
+# ── Testing / Coverage ────────────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# ── Type checking / linting ───────────────────────────────────────────────────
+.mypy_cache/
+.ruff_cache/
+
+# ── Environment / secrets ─────────────────────────────────────────────────────
+.env
+.env.*
+*.env
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+
+# ── IDE / Editor ──────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+
+# ── macOS ─────────────────────────────────────────────────────────────────────
 .DS_Store
+**/.DS_Store
+
+# ── Node (assignment-sensorfact-backend) ──────────────────────────────────────
+node_modules/
+assignment-sensorfact-backend/node_modules/

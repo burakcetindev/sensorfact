@@ -61,10 +61,16 @@ wait_for_server() {
 }
 
 ensure_server() {
-  if server_running; then
-    ok "Server is already running at $API_URL"
-    return
+  # Kill any existing server at port 4000 to ensure we always run latest code.
+  local existing_pid
+  existing_pid=$(lsof -ti tcp:4000 2>/dev/null || true)
+  if [[ -n "$existing_pid" ]]; then
+    run "Stopping previous server (pid $existing_pid)..."
+    kill "$existing_pid" 2>/dev/null || true
+    sleep 0.5
   fi
+  [[ -f "$SERVER_PID_FILE" ]] && rm -f "$SERVER_PID_FILE"
+
   run "Starting server..."
   [[ -d "$VENV_DIR" ]] || "$ROOT_DIR/scripts/build.sh"
   source "$VENV_DIR/bin/activate"
