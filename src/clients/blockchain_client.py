@@ -133,21 +133,22 @@ class BlockchainClient:
     # ── block transaction pagination ──────────────────────────────────────────
 
     async def _get_block_txs(self, block_hash: str, tx_count: int) -> list[dict[str, Any]]:
-        """Fetch all transactions for a block, handling mempool.space pagination."""
-        pages = range(0, tx_count, self._TX_PAGE_SIZE)
-        semaphore = asyncio.Semaphore(settings.max_parallel_requests)
-
-        async def fetch_page(start: int) -> list[dict]:
-            async with semaphore:
-                path = f"/api/block/{block_hash}/txs/{start}" if start > 0 else f"/api/block/{block_hash}/txs"
-                data = await self._get_json(path)
-                await asyncio.sleep(0.15)  # gentle pacing between pages
-                return data if isinstance(data, list) else []
-
-        results = await asyncio.gather(*(fetch_page(s) for s in pages))
-        txs = []
-        for page in results:
+        """Fetch all transactions for a block — sequential pages to avoid rate limits."""
+        txs: list[dict] = []
+        start = 0
+        while start < tx_count:
+            path = (
+                f"/api/block/{block_hash}/txs/{start}"
+                if start > 0
+                else f"/api/block/{block_hash}/txs"
+            )
+            page = await self._get_json(path)
+            if not isinstance(page, list) or not page:
+                break
             txs.extend(page)
+            start += self._TX_PAGE_SIZE
+            if start < tx_count:
+                await asyncio.sleep(0.25)  # pacing between pages avoids 429s
         return txs
 
     # ── public API ────────────────────────────────────────────────────────────
@@ -226,7 +227,14 @@ class BlockchainClient:
                     # We've gone past the target day — stop
                     found_any = True
                     break
-                day_blocks.append({"hash": str(block.get("id", "")), "time": ts})
+                day_blocks.append({
+                    "hash": str(block.get("id", "")),
+                    "time": ts,
+                    # Include block-level size and tx_count so callers can
+                    # compute energy without fetching all transactions.
+                    "size": int(block.get("size", 0)),
+                    "tx_count": int(block.get("tx_count", 0)),
+                })
                 found_any = True
 
             if found_any and any(int(b.get("timestamp", 0)) < day_start_ts for b in chunk):

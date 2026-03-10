@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -24,7 +23,6 @@ class EnergyService:
         self._client = blockchain_client
         self._block_cache = TTLCache[dict[str, Any]](settings.block_cache_ttl_seconds)
         self._daily_cache = TTLCache[DailyEnergySummary](settings.daily_cache_ttl_seconds)
-        self._semaphore = asyncio.Semaphore(settings.max_parallel_requests)
 
     def _validate_block_identifier(self, block_identifier: str) -> str:
         normalized = block_identifier.strip()
@@ -106,35 +104,17 @@ class EnergyService:
         if cached is not None:
             return cached
 
-        blocks_result = await self._client.get_blocks_by_day(day_start_utc)
-        # get_blocks_by_day now returns list[dict] directly
-        if not isinstance(blocks_result, list):
+        block_items = await self._client.get_blocks_by_day(day_start_utc)
+        if not isinstance(block_items, list):
             raise BlockchainClientError("Unexpected blocks-by-day response format.")
 
-        block_items = blocks_result  # already a list[dict] after validation above
-
-        async def load_block_energy(block_item: dict[str, Any]) -> tuple[int, float]:
-            block_hash = block_item.get("hash")
-            if not isinstance(block_hash, str) or not block_hash:
-                return (0, 0.0)
-            async with self._semaphore:
-                block = await self._get_block_cached(block_hash)
-            txs = block.get("tx")
-            if not isinstance(txs, list):
-                return (0, 0.0)
-
-            total = 0.0
-            count = 0
-            for tx in txs:
-                tx_size = tx.get("size")
-                if isinstance(tx_size, int):
-                    total += self._energy_for_size(tx_size)
-                    count += 1
-            return (count, round(total, 6))
-
-        block_stats = await asyncio.gather(*(load_block_energy(block) for block in block_items))
-        tx_count = sum(item[0] for item in block_stats)
-        total_energy = round(sum(item[1] for item in block_stats), 6)
+        # Use block-level `size` (included in the /api/blocks/{height} chunk
+        # response) to compute energy without fetching all transaction pages.
+        # This is equivalent to summing individual tx sizes and avoids ~80
+        # extra API calls per block that would otherwise trigger rate limits.
+        tx_count = sum(int(b.get("tx_count", 0)) for b in block_items)
+        total_size = sum(int(b.get("size", 0)) for b in block_items)
+        total_energy = round(total_size * settings.energy_cost_per_byte_kwh, 6)
 
         summary = DailyEnergySummary(
             date=day_start_utc.date().isoformat(),
@@ -149,12 +129,19 @@ class EnergyService:
         days = self._validate_days(days)
         now = datetime.now(tz=UTC)
 
-        dates: list[datetime] = []
-        for offset in range(days):
-            day = (now - timedelta(days=offset)).replace(hour=0, minute=0, second=0, microsecond=0)
-            dates.append(day)
+        dates: list[datetime] = [
+            (now - timedelta(days=offset)).replace(hour=0, minute=0, second=0, microsecond=0)
+            for offset in range(days)
+        ]
 
-        summaries = await asyncio.gather(*(self._daily_energy_for_date(day) for day in dates))
+        # Process days sequentially — each day already makes many requests
+        # (walking backwards through blocks); concurrent days would multiply
+        # the API call rate and trigger rate limits.
+        summaries: list[DailyEnergySummary] = []
+        for day in dates:
+            summary = await self._daily_energy_for_date(day)
+            summaries.append(summary)
+
         return sorted(summaries, key=lambda item: item.date)
 
     async def total_energy_by_wallet_address(self, address: str) -> WalletEnergySummary:

@@ -29,19 +29,30 @@ _GRAPHIQL_HTML = """<!DOCTYPE html>
     root.render(React.createElement(GraphiQL, {
       fetcher,
       defaultEditorToolsVisibility: true,
-      defaultQuery: `# Bitcoin Energy API
+      defaultQuery: `# Bitcoin Energy API — GraphiQL Explorer
 # ─────────────────────────────────────────────────────────
-# MANDATORY 1: Energy breakdown for a specific block
-# Replace the hash below with any real block hash
+# Run any query below using the ▶ button (or Ctrl+Enter).
+# Use latestBlock first to grab a real block hash or height.
 
+# 1. Get the current latest block (hash + height)
+query LatestBlock {
+  latestBlock {
+    hash
+    height
+  }
+}
+
+# 2. Energy breakdown for a block
+#    Paste the hash from LatestBlock above, or use a height like "940137"
 query BlockEnergy {
   energyPerTransactionForBlock(
-    blockIdentifier: "PASTE_A_BLOCK_HASH_HERE"
+    blockIdentifier: "940137"
   ) {
     blockHash
     blockHeight
     transactionCount
     totalEnergyKwh
+    energyPerTransactionKwh
     transactions {
       hash
       sizeBytes
@@ -50,8 +61,7 @@ query BlockEnergy {
   }
 }
 
-# MANDATORY 2: Daily energy consumption (last 3 days)
-
+# 3. Total energy consumed day-by-day over the last N days
 query DailyEnergy {
   totalEnergyConsumptionLastDays(days: 3) {
     date
@@ -61,8 +71,8 @@ query DailyEnergy {
   }
 }
 
-# OPTIONAL: Wallet energy footprint
-
+# 4. Total energy for a wallet address
+#    Using Satoshi Nakamoto's genesis wallet as an example
 query WalletEnergy {
   totalEnergyByWalletAddress(
     address: "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"
