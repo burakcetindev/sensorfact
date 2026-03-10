@@ -141,13 +141,13 @@ flowchart TD
     B -- 200 + JSON --> C{Payload shape expected?}
     C -- Yes --> K([Return to caller])
     C -- No / JSONDecodeError --> E
-    B -- 429 Rate Limit --> R1[Sleep rate_limit_backoff_seconds\nstarts at 5 s, doubles each retry]
-    B -- 404 Not Found --> NF[Raise NotFoundError\nno retry]
-    B -- 5xx / network error --> E[Retry with exponential backoff\nstarts at 0.5 s, doubles each retry]
+    B -- 429 Rate Limit --> R1["Sleep rate_limit_backoff_seconds<br/>starts at 5 s, doubles each retry"]
+    B -- 404 Not Found --> NF["Raise NotFoundError<br/>no retry"]
+    B -- 5xx / network error --> E["Retry with exponential backoff<br/>starts at 0.5 s, doubles each retry"]
     R1 --> AT{Attempt <= max_retries?}
     E --> AT
     AT -- Yes --> A
-    AT -- No / exhausted --> ERR[Raise BlockchainClientError\nGraphQL errors[] surface to client]
+    AT -- No / exhausted --> ERR["Raise BlockchainClientError<br/>GraphQL errors[] surface to client"]
 ```
 
 | Error type | Initial backoff | Max attempts |

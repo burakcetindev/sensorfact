@@ -75,7 +75,7 @@ ensure_server() {
   [[ -d "$VENV_DIR" ]] || "$ROOT_DIR/scripts/build.sh"
   source "$VENV_DIR/bin/activate"
   export PYTHONPATH="$ROOT_DIR"
-  "$VENV_DIR/bin/uvicorn" src.main:app \
+  "$VENV_DIR/bin/python" -m uvicorn src.main:app \
     --host 0.0.0.0 --port 4000 --log-level warning \
     > /tmp/sensorfact_demo_server.log 2>&1 &
   echo $! > "$SERVER_PID_FILE"
@@ -297,6 +297,7 @@ print_menu() {
   echo -e "   ${CYAN}${BOLD}4${R}  Input validation examples"
   echo -e "   ${CYAN}${BOLD}5${R}  System health"
   echo -e "   ${CYAN}${BOLD}6${R}  Open GraphiQL in browser"
+  echo -e "   ${CYAN}${BOLD}7${R}  Exit"
   echo ""
   sep
   echo ""
@@ -325,10 +326,10 @@ while true; do
     4) screen_validation ;;
     5) screen_health     ;;
     6) screen_webui      ;;
-    q|Q|quit|exit)
+    7|q|Q|quit|exit)
       echo -e "\n  ${DIM}Goodbye.${R}\n"; exit 0 ;;
     *)
-      warn "Please enter a number from 1 to 6, or q to quit." ;;
+      warn "Please enter a number from 1 to 7." ;;
   esac
 
   echo ""

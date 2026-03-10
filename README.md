@@ -160,3 +160,78 @@ full rate-limit handling decision tree.
 | `docs/data-flow.md` | Sequence diagrams for every query including cache and retry paths |
 | `docs/edge-cases.md` | Input validation rules, API failure modes, data inconsistency handling |
 | `docs/images/` | Screenshots of the GraphiQL UI and demo CLI in action |
+
+---
+
+## Project file hierarchy
+
+```
+sensorfact/
+│
+├── README.md                    ← This file — setup, queries, architecture summary
+├── requirements.txt             ← Python dependencies (FastAPI, Ariadne, httpx, pytest …)
+├── pytest.ini                   ← Test runner config: asyncio mode, coverage gate ≥80%
+├── .gitignore                   ← Excludes .venv/, __pycache__/, .coverage, .env, etc.
+│
+├── scripts/
+│   ├── build.sh                 ← Creates .venv and installs requirements.txt
+│   ├── start.sh                 ← Starts the API server on port 4000 (runs build if needed)
+│   └── demo.sh                  ← Interactive menu-driven demo; auto-starts the server
+│
+├── src/
+│   ├── main.py                  ← FastAPI app: mounts GraphQL endpoint, serves GraphiQL IDE,
+│   │                               exposes GET /health, handles malformed request bodies
+│   │
+│   ├── api/
+│   │   └── schema.py            ← Ariadne SDL type definitions; all four GraphQL resolvers;
+│   │                               camelCase DTO mapper functions (_to_block, _to_daily, _to_wallet)
+│   │
+│   ├── clients/
+│   │   └── blockchain_client.py ← All HTTP I/O against mempool.space REST API.
+│   │                               Implements: exponential-backoff retries, 429 rate-limit
+│   │                               handling, parallel tx-page fetching (asyncio.gather +
+│   │                               Semaphore), single-pass multi-day block walk
+│   │
+│   ├── config/
+│   │   └── settings.py          ← Pydantic Settings class; all tunable values (energy model
+│   │                               constant, cache TTLs, retry counts, parallel request cap,
+│   │                               CO₂ factor) — all overridable via APP_* environment variables
+│   │
+│   ├── domain/
+│   │   └── models.py            ← Four frozen dataclasses: TransactionEnergy,
+│   │                               BlockEnergySummary, DailyEnergySummary, WalletEnergySummary.
+│   │                               These are the only types that cross layer boundaries.
+│   │
+│   ├── services/
+│   │   └── energy_service.py    ← Core business logic: input validation, cache coordination,
+│   │                               energy calculation (size × 4.56 KWh), CO₂ conversion,
+│   │                               daily aggregation, deduplication of wallet transactions
+│   │
+│   └── utils/
+│       └── cache.py             ← Generic in-process TTL cache (TTLCache[T]). O(1) get/set,
+│                                   lazy expiry on read, not thread-safe (safe for asyncio)
+│
+├── tests/
+│   ├── conftest.py              ← Shared fixtures: make_http_getter, make_service;
+│   │                               longest-key-wins stub matcher to avoid prefix collisions
+│   ├── test_cache.py            ← TTLCache: set/get round-trips, expiry, overwrite, TTL=0
+│   ├── test_validation.py       ← All _validate_* helpers and _energy_for_size boundary values
+│   ├── test_energy_service.py   ← EnergyService integration tests: CO₂ fields, caching,
+│   │                               deduplication, empty blocks, skipped transactions
+│   ├── test_blockchain_client.py← BlockchainClient: pagination order, day bucketing,
+│   │                               string-JSON branch, height resolution, error paths
+│   ├── test_schema.py           ← All four GraphQL resolvers + all three DTO mappers;
+│   │                               verifies error wrapping (ValidationError → ValueError)
+│   └── test_main.py             ← FastAPI layer: /health, GET /graphql (HTML), POST /graphql
+│                                   (introspection, validation errors, malformed JSON, CORS)
+│
+└── docs/
+    ├── architecture.md          ← Layer diagram, class relationships, design principles
+    ├── system-architecture.md   ← Request lifecycle, deployment view, caching strategy
+    ├── data-flow.md             ← Mermaid sequence diagrams for all four query paths
+    ├── edge-cases.md            ← Decision flowchart, validation rules, failure-mode table
+    └── images/
+        ├── block-energy-breakdown.png  ← GraphiQL screenshot: block query result
+        ├── daily-energy-summary.png    ← GraphiQL screenshot: daily aggregation result
+        └── demo-cli-overview.png       ← Terminal screenshot: demo.sh menu in action
+```

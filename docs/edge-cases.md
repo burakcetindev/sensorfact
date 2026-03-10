@@ -14,9 +14,9 @@ flowchart TD
     B -->|valid| C[Fetch from mempool.space]
 
     C --> D{API response}
-    D -->|429 Rate Limit| R[Sleep rate_limit_backoff_seconds\ndoubling per retry, max 4 attempts]
+    D -->|429 Rate Limit| R["Sleep rate_limit_backoff_seconds<br/>doubling per retry, max 4 attempts"]
     R -->|success| F[Process response]
-    R -->|exhausted| ERR[BlockchainClientError surfaced in GraphQL errors[]]
+    R -->|exhausted| ERR["BlockchainClientError surfaced in GraphQL errors[]"]
     D -->|404 Not Found| NF[NotFoundError — no retry]
     D -->|HTML / non-JSON body| JD[JSONDecodeError -> BlockchainClientError -> retry]
     D -->|200 wrong type| WT[BlockchainClientError: unexpected payload type -> retry]
