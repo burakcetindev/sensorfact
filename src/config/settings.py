@@ -29,7 +29,7 @@ class Settings(BaseSettings):
                                     when fetching block transaction pages.
     """
 
-    blockchain_api_base_url: str = "https://blockchain.info"
+    blockchain_api_base_url: str = "https://mempool.space"
     energy_cost_per_byte_kwh: float = 4.56
     request_timeout_seconds: float = 10.0
     max_retries: int = 4

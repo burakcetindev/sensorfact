@@ -10,7 +10,18 @@ A GraphQL API for monitoring Bitcoin network energy consumption, built with Pyth
 | **FastAPI** | HTTP server, health endpoint, GraphiQL serving |
 | **Ariadne** | Schema-first GraphQL (SDL → resolvers) |
 | **httpx** | Async HTTP client with automatic redirect following |
-| **mempool.space** | Live Bitcoin blockchain data source (public REST API) |
+| **mempool.space** | Live Bitcoin blockchain data source (public REST API) — see note below |
+
+> **API choice:** The assignment suggests `blockchain.com` / `blockchain.info`.
+> After testing, that API throttled aggressively (frequent HTTP 429), had inconsistent
+> CORS headers, and several of its documented endpoints returned HTML error pages
+> rather than JSON.
+> [mempool.space](https://mempool.space/docs/api/rest) is an open-source alternative
+> that exposes the same data (blocks, transactions, wallet addresses) with consistent
+> JSON responses, clearer rate-limit behaviour, and better documentation.
+> The normalisation layer in `BlockchainClient` maps mempool.space response shapes
+> to the dict format the service layer expects, so swapping data sources in future
+> requires changing only that file.
 | **TTLCache** | In-process per-entity time-to-live cache |
 
 ## Requirements coverage
