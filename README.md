@@ -11,6 +11,7 @@ A GraphQL API for monitoring Bitcoin network energy consumption, built with Pyth
 | **Ariadne** | Schema-first GraphQL (SDL → resolvers) |
 | **httpx** | Async HTTP client with automatic redirect following |
 | **mempool.space** | Live Bitcoin blockchain data source (public REST API) — see note below |
+| **TTLCache** | In-process per-entity time-to-live cache |
 
 > **API choice:** The assignment suggests `blockchain.com` / `blockchain.info`.
 > After testing, that API throttled aggressively (frequent HTTP 429), had inconsistent
@@ -22,7 +23,6 @@ A GraphQL API for monitoring Bitcoin network energy consumption, built with Pyth
 > The normalisation layer in `BlockchainClient` maps mempool.space response shapes
 > to the dict format the service layer expects, so swapping data sources in future
 > requires changing only that file.
-| **TTLCache** | In-process per-entity time-to-live cache |
 
 ## Requirements coverage
 
@@ -170,6 +170,7 @@ full rate-limit handling decision tree.
 | `docs/system-architecture.md` | Request lifecycle, deployment view, runtime characteristics |
 | `docs/data-flow.md` | Sequence diagrams for every query including cache and retry paths |
 | `docs/edge-cases.md` | Input validation rules, API failure modes, data inconsistency handling |
+| `docs/considerations.md` | Design rationale: API choice, trade-offs, limitations, and mitigation strategy |
 | `docs/images/` | Screenshots of the GraphiQL UI and demo CLI in action |
 
 ---
@@ -241,6 +242,7 @@ sensorfact/
     ├── system-architecture.md   ← Request lifecycle, deployment view, caching strategy
     ├── data-flow.md             ← Mermaid sequence diagrams for all four query paths
     ├── edge-cases.md            ← Decision flowchart, validation rules, failure-mode table
+    ├── considerations.md        ← Design decisions, constraints, API choice, and trade-off analysis
     └── images/
         ├── block-energy-breakdown.png  ← GraphiQL screenshot: block query result
         ├── daily-energy-summary.png    ← GraphiQL screenshot: daily aggregation result
